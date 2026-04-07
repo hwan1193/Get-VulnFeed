@@ -1,4 +1,4 @@
-<# ================== Get-VulnOps.ps1 ==================
+﻿<# ================== Get-VulnOps.ps1 ==================
  - Sources:
      1) CISA KEV (Known Exploited)
      2) NVD (recent CVEs, pubStartDate~pubEndDate)
@@ -60,12 +60,13 @@ $Global:HttpHeaders = @{
   'Sec-Ch-Ua'                 = '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"'
   'Sec-Ch-Ua-Mobile'          = '?0'
   'Sec-Ch-Ua-Platform'        = '"Windows"'
-  'Sec-Fetch-Site'            = 'none'
+  'Sec-Fetch-Site'            = 'same-origin'  
   'Sec-Fetch-Mode'            = 'navigate'
   'Sec-Fetch-User'            = '?1'
   'Sec-Fetch-Dest'            = 'document'
- #'Connection'                = 'keep-alive'
-}
+  'Referer'                   = 'https://www.boho.or.kr/kr/bbs/list.do?bbsId=B0000133&menuNo=205020' 
+  #'Connection'                = 'keep-alive'
+} 
 
 # KISA 등에서 쿠키를 요구할 때를 대비한 글로벌 세션 생성
 $Global:WebSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -275,6 +276,7 @@ function Extract-CVEs {
 
 $krHits = @()
 
+<# 여기서 부터 주석!!
 foreach($startUrl in $KoreaListPages){
   Write-Host (" Start -> {0}" -f $startUrl) -ForegroundColor DarkCyan
 
@@ -337,6 +339,12 @@ foreach($startUrl in $KoreaListPages){
 
   foreach($u in $absLinks){
     $text = Get-PageText -Url $u
+    Write-Host ("  [$u] 페이지 텍스트 길이: " + $text.Length) -ForegroundColor Magenta
+    if($text.Length -lt 1000){
+        Write-Host "  [차단 원인 분석] $text" -ForegroundColor DarkCyan
+    }
+    # ==================================
+
     $cves = Extract-CVEs -Text $text
     if(-not $cves.Count){ continue }
 
@@ -370,6 +378,7 @@ if($krHits.Count){
 } else {
   Write-Host "No CVEs extracted from KISA/KRCERT pages (check start URLs)." -ForegroundColor Yellow
 }
+#> #글로벌 데이터 (CISA, NVD, Vendor)만 챙기는 파이프라인 완성도. 
 
 # ========== 3.5) Vendor/CERT quick scan (폴백/보강) ==========
 Write-Host "`n[3.5] Scanning vendor/CERT pages..." -ForegroundColor Cyan

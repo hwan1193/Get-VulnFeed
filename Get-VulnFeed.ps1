@@ -37,7 +37,7 @@ $MaxKoreaPages  = 30                    # max detail pages to fetch per start pa
 # Keywords you care about (free-form, matched case-insensitively)
 $Keywords = @(
   "weblogic","sitecore","apache http","nginx","exchange","windows server",
-  "openssh","openssl","fortinet","juniper","cisco","atlassian","mssql","mysql","postgresql","redis"
+  "openssh","openssl","fortinet","juniper","cisco","atlassian","mssql","mysql","postgresql","redis","postgresql","oracle","linux"
 )
 
 # KISA / KRCERT starting pages (add/remove as needed)

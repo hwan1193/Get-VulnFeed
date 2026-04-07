@@ -44,8 +44,8 @@ $Keywords = @(
 # The script will open each page, collect detail links (href), visit them, and extract CVE IDs.
 $KoreaStartPages = @(
   # KRCERT KNVD detail/list examples (adjust to your subscriptions)
-  "https://knvd.krcert.or.kr/",
-  "https://knvd.krcert.or.kr/resultList.do"
+  "https://www.boho.or.kr/kr/bbs/list.do?bbsId=B0000133&menuNo=205020", # KISA 보안공지
+  "https://www.boho.or.kr/kr/bbs/list.do?bbsId=B0000204&menuNo=205021"  # KISA 취약점 업데이트
   # If you have specific list pages, add them too, e.g.:
   # "https://knvd.krcert.or.kr/data/secNoticeList.do",
   # "https://www.krcert.or.kr/data/secNoticeList.do"
@@ -53,11 +53,22 @@ $KoreaStartPages = @(
 
 # ---------- HTTP headers (봇 차단 완화) ----------
 $Global:HttpHeaders = @{
-  'User-Agent'      = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) PowerShell/VulnOps'
-  'Accept'          = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-  'Accept-Language' = 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
-  'Cache-Control'   = 'no-cache'
+  'User-Agent'                = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+  'Accept'                    = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7'
+  'Accept-Language'           = 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7'
+  'Upgrade-Insecure-Requests' = '1'
+  'Sec-Ch-Ua'                 = '"Google Chrome";v="123", "Not:A-Brand";v="8", "Chromium";v="123"'
+  'Sec-Ch-Ua-Mobile'          = '?0'
+  'Sec-Ch-Ua-Platform'        = '"Windows"'
+  'Sec-Fetch-Site'            = 'none'
+  'Sec-Fetch-Mode'            = 'navigate'
+  'Sec-Fetch-User'            = '?1'
+  'Sec-Fetch-Dest'            = 'document'
+ #'Connection'                = 'keep-alive'
 }
+
+# KISA 등에서 쿠키를 요구할 때를 대비한 글로벌 세션 생성
+$Global:WebSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
 
 # HTML 페이지 대상 재시도 래퍼 (Invoke-WebRequest)
 function Invoke-WebRetry {
@@ -68,10 +79,11 @@ function Invoke-WebRetry {
   )
   for($i=1; $i -le $MaxRetry; $i++){
     try {
-      return Invoke-WebRequest -Uri $Uri -Headers $Global:HttpHeaders -TimeoutSec $TimeoutSec -MaximumRedirection 5 -UseBasicParsing
+      # 세션 유지(-WebSession) 추가로 쿠키 기반 WAF 방어 우회
+      return Invoke-WebRequest -Uri $Uri -Headers $Global:HttpHeaders -WebSession $Global:WebSession -TimeoutSec $TimeoutSec -MaximumRedirection 5 -UseBasicParsing
     } catch {
       $code = $null; try { $code = $_.Exception.Response.StatusCode.value__ } catch {}
-      if($i -ge $MaxRetry -or -not ($code -in 429,500,502,503,504)){ throw }
+      if($i -ge $MaxRetry -or -not ($code -in 429,403,500,502,503,504)){ throw }
       $sleep = [Math]::Min(60, [Math]::Pow(2, $i) + (Get-Random -Min 0 -Max 1000)/1000.0)
       Write-Host ("[Retry {0}] HTTP {1} -> sleeping {2:0.0}s" -f $i,$code,$sleep) -ForegroundColor DarkYellow
       Start-Sleep -Seconds $sleep
@@ -216,7 +228,7 @@ foreach($kw in $Keywords){
         }
       }
     }
-    if([string]::IsNullOrWhiteSpace($NvdApiKey)){ $delayMs = 1200 } else { $delayMs = 250 }
+    if([string]::IsNullOrWhiteSpace($NvdApiKey)){ $delayMs = 6000 } else { $delayMs = 250 }
     Start-Sleep -Milliseconds $delayMs
   }catch{
     Write-Host ("NVD fetch failed ({0}): {1}" -f $kw, $_.Exception.Message) -ForegroundColor DarkYellow
@@ -237,11 +249,7 @@ Write-Host "`n[3/4] Crawling KISA/KRCERT pages..." -ForegroundColor Cyan
 # 페이지네이션 확장 (resultList.do 인 경우 1~3페이지 순회)
 $KoreaListPages = @()
 foreach($base in $KoreaStartPages){
-  if($base -match 'resultList\.do'){
-    1..3 | ForEach-Object { $KoreaListPages += "$($base)?pageIndex=$_" }
-  } else {
-    $KoreaListPages += $base
-  }
+  1..3 | ForEach-Object { $KoreaListPages += "$($base)&pageIndex=$_" }
 }
 
 function Get-PageText {
@@ -273,7 +281,7 @@ foreach($startUrl in $KoreaListPages){
   try {
     $root = Invoke-WebRetry -Uri $startUrl -TimeoutSec 60
   } catch {
-    Write-Host ("  Failed to open: {0}" -f $startUrl) -ForegroundColor DarkYellow
+    Write-Host ("  Failed to open: {0} - 상세 사유: {1}" -f $startUrl, $_.Exception.Message) -ForegroundColor Red
     continue
   }
 
